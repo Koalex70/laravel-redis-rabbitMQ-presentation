@@ -1,0 +1,7 @@
+.vscode/
+.idea/
+.cursor/
+.nova/
+*.log
+*.tmp
+*.swp
