@@ -142,3 +142,85 @@ REDIS_PORT=6379
 - зафиксированы целевые ориентиры по задержкам;
 - зафиксированы границы первой версии (без retry/dead-letter);
 - этот раздел добавлен в `README` и служит источником требований для шага 1.
+
+## Шаг 1: каркас проекта и окружение
+
+На этом шаге поднимаем инфраструктуру, чтобы перейти к реализации кеша и очередей:
+- `app` (Laravel API);
+- `worker` (заглушка, отдельный контейнер под будущий обработчик очереди);
+- `web` (Nginx);
+- `postgres`;
+- `redis`;
+- `redisinsight` (UI для визуальной проверки Redis).
+
+### Что уже включает шаг 1
+
+- Контейнер `worker` в `compose` на том же образе, что и `app`.
+- `redisinsight` в `compose` (порт `5540` по умолчанию).
+- Endpoint `GET /api/v1/health` (статус приложения).
+- Endpoint `GET /api/v1/health/deps` (проверка `PostgreSQL` и `Redis` с latency).
+- Подготовленная миграция `products` для следующего шага с кешем.
+- Базовые демо-переменные окружения:
+  - `CACHE_TTL_SECONDS=60`
+  - `QUEUE_NAME=reports`
+
+### Быстрый запуск шага 1
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+### Проверка готовности окружения
+
+```bash
+# статусы контейнеров
+docker compose ps
+
+# запуск миграций
+docker compose exec app php artisan migrate
+
+# проверка health endpoint приложения
+curl http://localhost:8080/api/v1/health
+
+# проверка зависимостей (db + redis)
+curl http://localhost:8080/api/v1/health/deps
+```
+
+Ожидаемый результат:
+- `health` возвращает `status=ok`;
+- `health/deps` возвращает `status=ok`, а в `checks` оба статуса `up`;
+- миграции выполняются без ошибок.
+
+### Definition of Done для шага 1
+
+Шаг 1 считается завершенным, когда:
+- `docker compose up -d --build` стабильно поднимает все сервисы;
+- контейнеры `app`, `worker`, `web`, `postgres`, `redis`, `redisinsight` в состоянии `Up`;
+- Laravel подключается к PostgreSQL и Redis;
+- `GET /api/v1/health` и `GET /api/v1/health/deps` доступны и корректны;
+- миграция таблицы `products` применяется успешно.
+
+## Шаг 2: кеширование products (MVC + Redis cache-aside)
+
+Реализован endpoint `GET /api/v1/products/{id}` в MVC-структуре:
+- контроллер: `ProductController`;
+- модель: `Product`;
+- сервис кеша: `ProductCacheService`.
+
+### Поведение endpoint
+
+- Сначала выполняется чтение из Redis по ключу `cache:product:{id}`.
+- При `HIT` данные возвращаются из Redis.
+- При `MISS` данные читаются из PostgreSQL, сохраняются в Redis с TTL и возвращаются клиенту.
+- Если продукт не найден, возвращается `404`.
+
+### Заголовки для наглядной демонстрации
+
+- `X-Cache: HIT|MISS`
+- `X-Response-Time-Ms: <число>`
+
+### Настройки демо
+
+- `CACHE_TTL_SECONDS` — TTL кеша продукта (по умолчанию `60`).
+- `CACHE_MISS_DELAY_MS` — искусственная задержка при MISS (по умолчанию `350`).
