@@ -281,3 +281,37 @@ curl http://localhost:8080/api/v1/health/deps
   }
 }
 ```
+
+## Шаг 4: наблюдаемость и дашборд
+
+Подготовлена полная наблюдаемость на базе API-метрик:
+- `Prometheus` (scrape `/api/v1/metrics/prometheus`);
+- `Grafana` с автоматическим provisioning datasource и dashboard;
+- дополнительные endpoint'ы метрик и demo-управления.
+
+### Новые API endpoint'ы метрик
+
+- `GET /api/v1/metrics/cache`
+- `GET /api/v1/metrics/queue`
+- `GET /api/v1/metrics/overview`
+- `GET /api/v1/metrics/prometheus`
+
+### Demo endpoint'ы управления
+
+- `POST /api/v1/demo/cache/flush`
+- `POST /api/v1/demo/metrics/reset`
+- `POST /api/v1/demo/jobs/enqueue`
+
+### Сервисы мониторинга
+
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (`admin/admin`)
+- RedisInsight: `http://localhost:5540`
+
+### Переменные окружения шага 4
+
+- `PROMETHEUS_PORT=9090`
+- `PROMETHEUS_RETENTION=7d`
+- `GRAFANA_PORT=3000`
+- `GRAFANA_ADMIN_USER=admin`
+- `GRAFANA_ADMIN_PASSWORD=admin`

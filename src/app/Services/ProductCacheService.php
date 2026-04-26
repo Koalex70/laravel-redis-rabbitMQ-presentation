@@ -16,6 +16,7 @@ class ProductCacheService
             $decodedPayload = json_decode($cachedPayload, true);
 
             if (is_array($decodedPayload)) {
+                Redis::incr('metrics:cache:hits');
                 return [
                     'product' => $decodedPayload,
                     'cache' => 'HIT',
@@ -27,6 +28,7 @@ class ProductCacheService
         $product = Product::query()->find($id);
 
         if ($product === null) {
+            Redis::incr('metrics:cache:misses');
             return null;
         }
 
@@ -35,6 +37,7 @@ class ProductCacheService
         $payload = $product->toArray();
         $ttlSeconds = max(1, (int) env('CACHE_TTL_SECONDS', 60));
         Redis::setex($cacheKey, $ttlSeconds, json_encode($payload));
+        Redis::incr('metrics:cache:misses');
 
         return [
             'product' => $payload,
@@ -46,6 +49,17 @@ class ProductCacheService
     private function cacheKey(int $id): string
     {
         return "cache:product:{$id}";
+    }
+
+    public function flushAll(): int
+    {
+        $keys = Redis::keys('cache:product:*');
+
+        if (!is_array($keys) || $keys === []) {
+            return 0;
+        }
+
+        return (int) Redis::del($keys);
     }
 
     private function simulateMissLatency(): void

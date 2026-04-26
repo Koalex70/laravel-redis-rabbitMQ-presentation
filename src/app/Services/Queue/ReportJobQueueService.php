@@ -9,6 +9,11 @@ use Illuminate\Support\Facades\Redis;
 
 class ReportJobQueueService
 {
+    public function queueNamePublic(): string
+    {
+        return $this->queueName();
+    }
+
     public function enqueue(array $payload): ReportJob
     {
         $queueName = $this->queueName();
@@ -104,6 +109,33 @@ class ReportJobQueueService
     public function queueDepth(): int
     {
         return (int) Redis::llen($this->queueKey($this->queueName()));
+    }
+
+    public function deadLetterDepth(): int
+    {
+        return (int) Redis::llen($this->deadLetterKey($this->queueName()));
+    }
+
+    public function metricsSnapshot(): array
+    {
+        return [
+            'enqueued_total' => (int) Redis::get('metrics:jobs:enqueued'),
+            'processed_total' => (int) Redis::get('metrics:jobs:processed'),
+            'failed_total' => (int) Redis::get('metrics:jobs:failed'),
+            'retried_total' => (int) Redis::get('metrics:jobs:retried'),
+            'invalid_payload_total' => (int) Redis::get('metrics:jobs:invalid_payload'),
+            'missing_in_db_total' => (int) Redis::get('metrics:jobs:missing_in_db'),
+        ];
+    }
+
+    public function resetMetrics(): void
+    {
+        Redis::del('metrics:jobs:enqueued');
+        Redis::del('metrics:jobs:processed');
+        Redis::del('metrics:jobs:failed');
+        Redis::del('metrics:jobs:retried');
+        Redis::del('metrics:jobs:invalid_payload');
+        Redis::del('metrics:jobs:missing_in_db');
     }
 
     private function simulateReportGeneration(array $payload): array

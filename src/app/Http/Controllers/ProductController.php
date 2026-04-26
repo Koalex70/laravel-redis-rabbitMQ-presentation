@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\ProductShowResource;
+use App\Services\Metrics\ApiLatencyMetricsService;
 use App\Services\ProductCacheService;
 use App\Support\ApiErrorResponder;
 use Illuminate\Http\JsonResponse;
@@ -11,6 +12,7 @@ class ProductController extends Controller
 {
     public function __construct(
         private readonly ProductCacheService $productCacheService,
+        private readonly ApiLatencyMetricsService $latencyMetrics,
     ) {
     }
 
@@ -19,6 +21,7 @@ class ProductController extends Controller
         $startedAt = microtime(true);
         $result = $this->productCacheService->findById($id);
         $responseTimeMs = (int) round((microtime(true) - $startedAt) * 1000);
+        $this->latencyMetrics->record('products_show', $responseTimeMs);
 
         if ($result === null) {
             return ApiErrorResponder::respond(
