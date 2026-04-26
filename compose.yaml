@@ -29,6 +29,10 @@ services:
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
       CACHE_MISS_DELAY_MS: ${CACHE_MISS_DELAY_MS:-350}
       QUEUE_NAME: ${QUEUE_NAME:-reports}
+      QUEUE_POP_TIMEOUT: ${QUEUE_POP_TIMEOUT:-5}
+      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-3}
+      JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
+      JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
     depends_on:
       postgres:
         condition: service_healthy
@@ -54,7 +58,7 @@ services:
         APP_GID: ${APP_GID:-1000}
     container_name: laravel-worker
     working_dir: /var/www/html
-    command: ["sh", "-c", "while true; do sleep 3600; done"]
+    command: ["php", "artisan", "app:queue-worker"]
     volumes:
       - ./src:/var/www/html
     environment:
@@ -73,6 +77,10 @@ services:
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
       CACHE_MISS_DELAY_MS: ${CACHE_MISS_DELAY_MS:-350}
       QUEUE_NAME: ${QUEUE_NAME:-reports}
+      QUEUE_POP_TIMEOUT: ${QUEUE_POP_TIMEOUT:-5}
+      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-3}
+      JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
+      JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
     depends_on:
       postgres:
         condition: service_healthy

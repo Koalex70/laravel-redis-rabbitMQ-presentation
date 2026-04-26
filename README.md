@@ -224,3 +224,60 @@ curl http://localhost:8080/api/v1/health/deps
 
 - `CACHE_TTL_SECONDS` — TTL кеша продукта (по умолчанию `60`).
 - `CACHE_MISS_DELAY_MS` — искусственная задержка при MISS (по умолчанию `350`).
+
+## Шаг 3: очереди и worker (Redis List + PostgreSQL)
+
+Реализована постановка и обработка задач отчетов:
+- очередь на `Redis List`;
+- статус и история задач в `PostgreSQL` (`report_jobs`);
+- фоновый обработчик в отдельном контейнере `worker`;
+- retry и dead-letter;
+- bulk enqueue;
+- унифицированный формат ошибок API.
+
+### API шага 3
+
+- `POST /api/v1/jobs/report` — постановка одной задачи.
+- `POST /api/v1/jobs/report/bulk` — постановка пакета задач.
+- `GET /api/v1/jobs/{id}` — чтение текущего статуса задачи.
+
+### Статусы задач
+
+- `queued`
+- `processing`
+- `done`
+- `failed`
+
+### Retry и dead-letter
+
+- Количество попыток регулируется `QUEUE_MAX_ATTEMPTS` (по умолчанию `3`).
+- При ошибке и оставшихся попытках задача возвращается в очередь.
+- После исчерпания попыток задача переводится в `failed` и пишется в dead-letter: `queue:reports:dead`.
+
+### Worker
+
+- Контейнер `worker` запускает команду:
+  - `php artisan app:queue-worker`
+- Внутри используется `BRPOP` по `queue:reports`.
+
+### Настройки очередей
+
+- `QUEUE_NAME=reports`
+- `QUEUE_POP_TIMEOUT=5`
+- `QUEUE_MAX_ATTEMPTS=3`
+- `JOB_STATUS_TTL_SECONDS=86400`
+- `JOB_PROCESSING_DELAY_MS=800`
+
+### Формат ошибок API
+
+Ошибки возвращаются в едином формате:
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Validation failed.",
+    "details": {}
+  }
+}
+```

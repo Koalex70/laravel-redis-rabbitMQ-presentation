@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\ProductShowResource;
 use App\Services\ProductCacheService;
+use App\Support\ApiErrorResponder;
 use Illuminate\Http\JsonResponse;
 
 class ProductController extends Controller
@@ -20,11 +21,12 @@ class ProductController extends Controller
         $responseTimeMs = (int) round((microtime(true) - $startedAt) * 1000);
 
         if ($result === null) {
-            return response()
-                ->json([
-                    'message' => 'Product not found',
-                    'product_id' => $id,
-                ], 404)
+            return ApiErrorResponder::respond(
+                'product_not_found',
+                'Product not found.',
+                404,
+                ['product_id' => $id],
+            )
                 ->header('X-Cache', 'MISS')
                 ->header('X-Response-Time-Ms', (string) $responseTimeMs);
         }
