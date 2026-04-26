@@ -14,6 +14,8 @@ RUN apk add --no-cache \
     icu \
     libpq \
     libzip \
+    nodejs \
+    npm \
     postgresql-client \
     unzip \
     zip \

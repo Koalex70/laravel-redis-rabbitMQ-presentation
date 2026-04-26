@@ -26,6 +26,15 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_CLIENT: phpredis
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+      CACHE_MISS_DELAY_MS: ${CACHE_MISS_DELAY_MS:-350}
+      QUEUE_NAME: ${QUEUE_NAME:-reports}
+      QUEUE_POP_TIMEOUT: ${QUEUE_POP_TIMEOUT:-5}
+      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-3}
+      JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
+      JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
+      BENCHMARK_BASE_URL: ${BENCHMARK_BASE_URL:-http://web}
+      FRONTEND_BUILD_ON_START: ${FRONTEND_BUILD_ON_START:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,6 +47,50 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    networks:
+      - backend
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.3}
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    container_name: laravel-worker
+    working_dir: /var/www/html
+    command: ["php", "artisan", "app:queue-worker"]
+    volumes:
+      - ./src:/var/www/html
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: ${APP_DEBUG:-true}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-laravel}
+      DB_USERNAME: ${POSTGRES_USER:-laravel}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-laravel}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_CLIENT: phpredis
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-60}
+      CACHE_MISS_DELAY_MS: ${CACHE_MISS_DELAY_MS:-350}
+      QUEUE_NAME: ${QUEUE_NAME:-reports}
+      QUEUE_POP_TIMEOUT: ${QUEUE_POP_TIMEOUT:-5}
+      QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-3}
+      JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
+      JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
+      BENCHMARK_BASE_URL: ${BENCHMARK_BASE_URL:-http://web}
+      FRONTEND_BUILD_ON_START: ${FRONTEND_BUILD_ON_START:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - backend
 
@@ -95,9 +148,63 @@ services:
     networks:
       - backend
 
+  redisinsight:
+    image: redis/redisinsight:2.70
+    container_name: laravel-redisinsight
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "${REDISINSIGHT_PORT:-5540}:5540"
+    volumes:
+      - redisinsight_data:/data
+    restart: unless-stopped
+    networks:
+      - backend
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: laravel-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-7d}"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: laravel-grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - backend
+
 volumes:
   postgres_data:
   redis_data:
+  redisinsight_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   backend:
