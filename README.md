@@ -279,5 +279,150 @@ powershell -ExecutionPolicy Bypass -File .\load-tests\run-step5.ps1
   - `GET /api/v1/tests/runs`
   - `GET /api/v1/tests/runs/{id}`
 
+## Диаграммы взаимодействия
+
+### 1) Cache test (`MISS -> HIT`)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Пользователь/клиент
+    participant W as Nginx (web)
+    participant A as Laravel API (app)
+    participant R as Redis
+    participant P as PostgreSQL
+
+    U->>W: GET /api/v1/products/1
+    W->>A: proxy request
+    A->>R: GET cache:product:1
+    alt MISS
+        R-->>A: nil
+        A->>P: SELECT product by id=1
+        P-->>A: product row
+        A->>R: SETEX cache:product:1 ttl payload
+        A->>R: INCR metrics:cache:misses
+        A-->>W: 200 JSON + X-Cache: MISS
+    else HIT
+        R-->>A: cached payload
+        A->>R: INCR metrics:cache:hits
+        A-->>W: 200 JSON + X-Cache: HIT
+    end
+    W-->>U: HTTP response
+```
+
+### 2) Jobs test (enqueue + async worker)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Пользователь/клиент
+    participant W as Nginx (web)
+    participant A as Laravel API (app)
+    participant R as Redis
+    participant P as PostgreSQL
+    participant K as Worker (app:queue-worker)
+
+    U->>W: POST /api/v1/jobs/report
+    W->>A: proxy request
+    A->>P: INSERT report_jobs(status=queued)
+    A->>R: LPUSH queue:reports {job_id,payload}
+    A->>R: INCR metrics:jobs:enqueued
+    A-->>W: 202 Accepted + job_id
+    W-->>U: response
+
+    loop Worker polling
+        K->>R: BRPOP queue:reports
+        R-->>K: job payload
+        K->>P: UPDATE report_jobs(status=processing)
+        alt processing success
+            K->>P: UPDATE report_jobs(status=done,result)
+            K->>R: INCR metrics:jobs:processed
+        else processing failure
+            K->>R: INCR metrics:jobs:failed
+            alt attempts < QUEUE_MAX_ATTEMPTS
+                K->>R: LPUSH queue:reports retry payload
+                K->>R: INCR metrics:jobs:retried
+            else max attempts reached
+                K->>R: LPUSH queue:reports:dead payload
+                K->>P: UPDATE report_jobs(status=failed,error)
+            end
+        end
+    end
+
+    U->>W: GET /api/v1/jobs/{id}
+    W->>A: proxy request
+    A->>P: SELECT report_jobs by id
+    P-->>A: current status/result
+    A-->>W: 200 JSON
+    W-->>U: response
+```
+
+### 3) Поток метрик (UI + Prometheus + Grafana)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Dashboard (/dashboard)
+    participant A as Laravel API (app)
+    participant R as Redis metrics keys
+    participant PM as Prometheus
+    participant G as Grafana
+
+    loop every 2s
+        UI->>A: GET /api/v1/metrics/overview
+        A->>R: READ metrics:*
+        R-->>A: counters/snapshots
+        A-->>UI: JSON overview
+    end
+
+    loop scrape interval
+        PM->>A: GET /api/v1/metrics/prometheus
+        A->>R: READ metrics:*
+        R-->>A: counters/snapshots
+        A-->>PM: text/plain metrics
+    end
+
+    G->>PM: PromQL queries
+    PM-->>G: time series
+```
+
+### 4) UI benchmark test (`/api/v1/tests/*`)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Dashboard (/dashboard)
+    participant A as Laravel API (TestController)
+    participant P as PostgreSQL (benchmark_runs)
+    participant R as Redis (queue:benchmarks)
+    participant K as Worker (app:queue-worker)
+    participant E as API endpoints under test
+
+    UI->>A: POST /api/v1/tests/cache/run (or jobs/run)
+    A->>P: INSERT benchmark_runs(status=queued,type)
+    A->>R: LPUSH queue:benchmarks {run_id,type}
+    A-->>UI: 202 Accepted + run_id
+
+    loop Worker cycle
+        K->>R: BRPOP queue:benchmarks
+        R-->>K: run payload
+        K->>P: UPDATE benchmark_runs(status=running,started_at)
+        alt type=cache
+            K->>E: GET /api/v1/products/{id} (N times)
+            E-->>K: timings/results
+        else type=jobs
+            K->>E: POST /api/v1/jobs/report (N times)
+            E-->>K: timings/results
+        end
+        K->>P: UPDATE benchmark_runs(status=done,summary,finished_at)
+    end
+
+    loop every 2s
+        UI->>A: GET /api/v1/tests/runs/{run_id}
+        A->>P: SELECT benchmark_runs by id
+        P-->>A: current status/summary/error
+        A-->>UI: JSON run details
+    end
+```
 
 
