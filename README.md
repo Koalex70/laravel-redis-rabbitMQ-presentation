@@ -240,18 +240,16 @@ powershell -ExecutionPolicy Bypass -File .\load-tests\run-step5.ps1
 - `GRAFANA_ADMIN_USER`
 - `GRAFANA_ADMIN_PASSWORD`
 
-### Фронтенд в Docker
-- `FRONTEND_BUILD_ON_START=true|false`
-  - `true` для `app` (сборка фронта при старте контейнера),
-  - `false` для `worker`.
-
 ## Frontend build внутри Docker
 
-Фронтенд собирается в контейнере `app` при старте:
-- `npm install --include=optional`
-- `npm run build`
+Сборка фронтенда вынесена в отдельный build-stage (`frontend-builder`) в `docker/php/Dockerfile`.
+На этапе `docker build` выполняется `npm install` и `npm run build`, а готовые ассеты копируются в runtime-образ.
+При старте `app` контейнера эти ассеты синхронизируются в shared volume `frontend_build`, который читается `web`.
 
-Это избавляет от необходимости ставить Node.js локально.
+Итог:
+- локальный `Node.js` не нужен;
+- `app` стартует без ожидания frontend-сборки;
+- после рестарта контейнеров нет временного `502`, связанного с `vite build` в entrypoint.
 
 ## API (кратко)
 

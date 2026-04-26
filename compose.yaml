@@ -13,6 +13,7 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./src:/var/www/html
+      - frontend_build:/var/www/html/public/build
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-true}
@@ -34,7 +35,6 @@ services:
       JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
       JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
       BENCHMARK_BASE_URL: ${BENCHMARK_BASE_URL:-http://web}
-      FRONTEND_BUILD_ON_START: ${FRONTEND_BUILD_ON_START:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +63,7 @@ services:
     command: ["php", "artisan", "app:queue-worker"]
     volumes:
       - ./src:/var/www/html
+      - frontend_build:/var/www/html/public/build
     environment:
       APP_ENV: ${APP_ENV:-local}
       APP_DEBUG: ${APP_DEBUG:-true}
@@ -84,7 +85,6 @@ services:
       JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
       JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
       BENCHMARK_BASE_URL: ${BENCHMARK_BASE_URL:-http://web}
-      FRONTEND_BUILD_ON_START: ${FRONTEND_BUILD_ON_START:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,6 +104,7 @@ services:
       - "${APP_PORT:-8080}:80"
     volumes:
       - ./src:/var/www/html:ro
+      - frontend_build:/var/www/html/public/build:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped
     networks:
@@ -205,6 +206,7 @@ volumes:
   redisinsight_data:
   prometheus_data:
   grafana_data:
+  frontend_build:
 
 networks:
   backend:

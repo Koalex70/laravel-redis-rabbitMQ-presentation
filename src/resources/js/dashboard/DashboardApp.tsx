@@ -49,6 +49,7 @@ export default function DashboardApp() {
   const [runs, setRuns] = useState<BenchmarkRun[]>([]);
   const [isBusy, setIsBusy] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string>("");
+  const [cacheWarmAt, setCacheWarmAt] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -124,6 +125,45 @@ export default function DashboardApp() {
     [runs],
   );
 
+  const cacheState = useMemo(() => {
+    if (!metrics) {
+      return { label: "Нет данных", tone: "text-slate-300", bg: "bg-slate-800/60" };
+    }
+
+    const { hits_total: hits, misses_total: misses, hit_rate: hitRate } = metrics.cache;
+    const hasTraffic = hits + misses > 0;
+
+    if (!hasTraffic) {
+      return { label: "Холодный (нет запросов)", tone: "text-slate-300", bg: "bg-slate-800/60" };
+    }
+
+    const warmThresholdReached = misses > 0 && hitRate >= 80 && hits >= 3;
+    if (warmThresholdReached) {
+      return { label: "Прогрет", tone: "text-emerald-300", bg: "bg-emerald-900/30" };
+    }
+
+    return { label: "Прогревается", tone: "text-amber-300", bg: "bg-amber-900/30" };
+  }, [metrics]);
+
+  useEffect(() => {
+    if (!metrics) {
+      return;
+    }
+
+    const { hits_total: hits, misses_total: misses, hit_rate: hitRate } = metrics.cache;
+    const warmThresholdReached = misses > 0 && hitRate >= 80 && hits >= 3;
+    const wasReset = hits === 0 && misses === 0;
+
+    if (wasReset) {
+      setCacheWarmAt(null);
+      return;
+    }
+
+    if (warmThresholdReached && !cacheWarmAt) {
+      setCacheWarmAt(new Date().toISOString());
+    }
+  }, [metrics, cacheWarmAt]);
+
   useEffect(() => {
     if (activeRun) {
       const element = document.getElementById("active-run-panel");
@@ -151,6 +191,19 @@ export default function DashboardApp() {
             <p className="mt-2 text-2xl font-semibold">{card.value}</p>
           </article>
         ))}
+      </section>
+
+      <section className="mb-6 rounded border border-slate-700 bg-slate-900 p-4">
+        <h2 className="mb-3 text-lg font-semibold">Состояние прогрева кеша</h2>
+        <div className={`rounded border border-slate-700 px-4 py-3 ${cacheState.bg}`}>
+          <p className={`text-base font-semibold ${cacheState.tone}`}>{cacheState.label}</p>
+          <p className="mt-1 text-sm text-slate-300">
+            Критерий прогрева: hit rate не ниже 80%, минимум 3 HIT и хотя бы 1 MISS.
+          </p>
+          <p className="mt-1 text-sm text-slate-300">
+            Момент прогрева: {cacheWarmAt ? formatDateTime(cacheWarmAt) : "еще не достигнут"}
+          </p>
+        </div>
       </section>
 
       <section className="mb-6 rounded border border-slate-700 bg-slate-900 p-4">
