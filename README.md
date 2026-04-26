@@ -6,6 +6,23 @@ Production-minded local setup for the latest Laravel with:
 - PostgreSQL
 - Redis
 
+## Портфолио-питч
+
+Учебно-практический проект, который наглядно показывает:
+- как `Redis cache-aside` ускоряет чтение данных;
+- как `Redis List` + worker разгружают API за счет фоновой обработки;
+- как observability-стек (`Prometheus + Grafana + RedisInsight`) подтверждает эффект метриками и графиками.
+
+Ключевая ценность проекта — воспроизводимый end-to-end сценарий:
+`поднять стек -> прогнать нагрузку -> увидеть KPI на дашборде`.
+
+## Что демонстрирует проект
+
+- Архитектура `Laravel + PostgreSQL + Redis` для high-read/high-burst сценариев.
+- Четкое разделение ответственности по MVC и сервисному слою.
+- Контролируемые demo endpoint'ы для повторяемых прогонов.
+- Нагрузочное тестирование через `k6` и фиксация результатов в артефактах.
+
 ## Project structure
 
 ```text
@@ -315,3 +332,136 @@ curl http://localhost:8080/api/v1/health/deps
 - `GRAFANA_PORT=3000`
 - `GRAFANA_ADMIN_USER=admin`
 - `GRAFANA_ADMIN_PASSWORD=admin`
+
+### Запуск и проверка шага 4
+
+```bash
+# 1) поднять сервисы
+docker compose up -d --build
+
+# 2) проверить метрики API
+curl http://localhost:8080/api/v1/metrics/cache
+curl http://localhost:8080/api/v1/metrics/queue
+curl http://localhost:8080/api/v1/metrics/overview
+curl http://localhost:8080/api/v1/metrics/prometheus
+
+# 3) проверить Prometheus target
+curl http://localhost:9090/api/v1/targets
+```
+
+Ожидаемое состояние:
+- Prometheus target `laravel_metrics` в статусе `up`;
+- Grafana доступна на `http://localhost:3000`;
+- dashboard `Redis Demo Overview` загружен автоматически.
+
+### Быстрый demo-flow
+
+```bash
+# очистить метрики и кеш
+curl -X POST http://localhost:8080/api/v1/demo/metrics/reset
+curl -X POST http://localhost:8080/api/v1/demo/cache/flush
+
+# показать MISS -> HIT
+curl http://localhost:8080/api/v1/products/1
+curl http://localhost:8080/api/v1/products/1
+
+# создать batch задач
+curl -X POST http://localhost:8080/api/v1/demo/jobs/enqueue
+```
+
+## Шаг 5: нагрузочное тестирование и фиксация KPI
+
+Шаг 5 фиксирует фактические показатели под нагрузкой и подтверждает целевые KPI.
+
+### Что используется
+
+- `k6` в Docker-образе `grafana/k6`;
+- готовые сценарии:
+  - `load-tests/k6-cache.js`
+  - `load-tests/k6-jobs.js`
+- скрипт запуска:
+  - `load-tests/run-step5.ps1`
+
+### Подготовка перед тестом
+
+```bash
+# 1) убедиться, что стек запущен
+docker compose up -d --build
+
+# 2) применить миграции
+docker compose exec app php artisan migrate --force
+
+# 3) подготовить продукт для cache-теста (id=1)
+docker compose exec app php artisan tinker --execute="App\\Models\\Product::updateOrCreate(['id'=>1], ['name'=>'Demo product','sku'=>'SKU-DEMO-001','description'=>'Product for load test','price_cents'=>19900,'stock'=>100]);"
+```
+
+### Запуск нагрузочного прогона
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\load-tests\run-step5.ps1
+```
+
+Скрипт создаст summary-файлы:
+- `load-tests/results/cache-summary.json`
+- `load-tests/results/jobs-summary.json`
+
+### Как интерпретировать результаты
+
+- `cache`:
+  - `http_req_duration p(95)` должен заметно снижаться после прогрева;
+  - в метриках API растет `cache_hits_total`, hit rate стремится вверх.
+- `jobs`:
+  - `POST /jobs/report` стабильно отвечает `202`;
+  - worker разгребает очередь, `jobs_processed_total` растет;
+  - API остается отзывчивым при росте queue depth.
+
+### KPI, которые фиксируем в отчете шага 5
+
+- `GET /products/{id}`:
+  - `MISS` latency (с начальной задержкой),
+  - `HIT` latency,
+  - разница `MISS -> HIT`.
+- `POST /jobs/report`:
+  - `p50/p95` времени ответа;
+  - доля ошибок (`http_req_failed`).
+- Очереди:
+  - пик `queue_depth`;
+  - `jobs_processed_total`, `jobs_failed_total`, `jobs_retried_total`.
+
+### Базовый результат прогона (локальный стенд)
+
+Пример замера после выполнения `load-tests/run-step5.ps1`:
+
+- Cache load (`k6-cache.js`):
+  - `http_req_duration p(95) ~= 912ms`
+  - `http_req_duration avg ~= 638ms`
+  - `http_req_failed = 0%`
+- Jobs enqueue load (`k6-jobs.js`):
+  - `http_req_duration p(95) ~= 966ms`
+  - `http_req_duration avg ~= 757ms`
+  - `http_req_failed = 0%`
+
+Snapshot очереди после jobs-прогона (`/api/v1/metrics/overview`):
+- `queue.depth = 260`
+- `jobs.enqueued_total = 146`
+- `jobs.processed_total = 168`
+- `jobs.failed_total = 0`
+
+## Чеклист для портфолио-скриншотов
+
+Рекомендуемый набор скриншотов для README/резюме:
+
+- Grafana: `Redis Demo Overview` (все панели в одном кадре).
+- Grafana: `Cache Hit Rate` до и после прогрева.
+- Grafana: `Queue Depth` при batch enqueue и последующем дренировании.
+- Grafana: `Jobs Counters` (processed/failed/retried).
+- Prometheus targets: статус `laravel_metrics = up`.
+- RedisInsight: ключи `cache:product:*`, `queue:reports`, `queue:reports:dead`.
+- API ответ `GET /api/v1/metrics/overview` после прогона.
+- Артефакты `load-tests/results/*.json` (фрагмент с p95/avg/failed rate).
+
+Минимальный “demo proof pack”:
+1) Скрин Grafana overview  
+2) Скрин Prometheus target up  
+3) Фрагмент k6 summary с p95  
+4) Скрин queue/dead-letter в RedisInsight
