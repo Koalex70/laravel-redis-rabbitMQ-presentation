@@ -1,4 +1,16 @@
 ARG PHP_VERSION=8.3
+ARG NODE_VERSION=24-alpine
+
+FROM node:${NODE_VERSION} AS frontend-builder
+
+WORKDIR /frontend
+
+COPY src/package*.json ./
+RUN npm install --no-audit --no-fund --include=optional
+
+COPY src/ ./
+RUN npm run build
+
 FROM php:${PHP_VERSION}-fpm-alpine
 
 ARG APP_UID=1000
@@ -14,8 +26,6 @@ RUN apk add --no-cache \
     icu \
     libpq \
     libzip \
-    nodejs \
-    npm \
     postgresql-client \
     unzip \
     zip \
@@ -46,11 +56,10 @@ WORKDIR /var/www/html
 
 COPY docker/php/conf.d/app.ini /usr/local/etc/php/conf.d/99-app.ini
 COPY docker/scripts/entrypoint.sh /usr/local/bin/entrypoint
+COPY --from=frontend-builder /frontend/public/build /opt/frontend-build
 
 RUN sed -i 's/\r$//' /usr/local/bin/entrypoint \
     && chmod +x /usr/local/bin/entrypoint
-
-USER laravel
 
 ENTRYPOINT ["sh", "/usr/local/bin/entrypoint"]
 CMD ["php-fpm", "-F"]
