@@ -31,4 +31,16 @@ if [ -f artisan ]; then
   php artisan key:generate --force >/dev/null 2>&1 || true
 fi
 
+if [ "${FRONTEND_BUILD_ON_START:-true}" = "true" ] && [ -f package.json ]; then
+  echo "Installing Node.js dependencies in container..."
+  npm install --no-audit --no-fund --include=optional
+  echo "Building frontend assets..."
+  if ! npm run build; then
+    echo "Initial frontend build failed, retrying with clean node_modules..."
+    rm -rf node_modules
+    npm install --no-audit --no-fund --include=optional
+    npm run build
+  fi
+fi
+
 exec "$@"

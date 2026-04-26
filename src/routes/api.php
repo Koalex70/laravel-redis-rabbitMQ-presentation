@@ -5,6 +5,7 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\JobController;
 use App\Http\Controllers\MetricsController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\TestController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -23,4 +24,9 @@ Route::prefix('v1')->group(function (): void {
     Route::post('/demo/cache/flush', [DemoController::class, 'flushCache']);
     Route::post('/demo/metrics/reset', [DemoController::class, 'resetMetrics']);
     Route::post('/demo/jobs/enqueue', [DemoController::class, 'enqueueDemoJobs']);
+
+    Route::post('/tests/cache/run', [TestController::class, 'runCache']);
+    Route::post('/tests/jobs/run', [TestController::class, 'runJobs']);
+    Route::get('/tests/runs', [TestController::class, 'history']);
+    Route::get('/tests/runs/{id}', [TestController::class, 'show'])->whereUuid('id');
 });

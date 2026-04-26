@@ -33,6 +33,8 @@ services:
       QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-3}
       JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
       JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
+      BENCHMARK_BASE_URL: ${BENCHMARK_BASE_URL:-http://web}
+      FRONTEND_BUILD_ON_START: ${FRONTEND_BUILD_ON_START:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,6 +83,8 @@ services:
       QUEUE_MAX_ATTEMPTS: ${QUEUE_MAX_ATTEMPTS:-3}
       JOB_STATUS_TTL_SECONDS: ${JOB_STATUS_TTL_SECONDS:-86400}
       JOB_PROCESSING_DELAY_MS: ${JOB_PROCESSING_DELAY_MS:-800}
+      BENCHMARK_BASE_URL: ${BENCHMARK_BASE_URL:-http://web}
+      FRONTEND_BUILD_ON_START: ${FRONTEND_BUILD_ON_START:-false}
     depends_on:
       postgres:
         condition: service_healthy
